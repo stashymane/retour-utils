@@ -165,28 +165,3 @@ pub fn fn_arg_names_with_self<'a>(
     }
     args
 }
-
-pub fn fn_types(fn_sig: &Signature) -> Result<Vec<&Type>, syn::Error> {
-    let mut types = Vec::new();
-    let mut errs: Option<syn::Error> = None;
-    for arg in &fn_sig.inputs {
-        match arg {
-            FnArg::Typed(arg) => types.push(arg.ty.as_ref()),
-            FnArg::Receiver(_) => {
-                let err = syn::Error::new(
-                    arg.span(),
-                    "`self` is not currently supported by this macro",
-                );
-                match &mut errs {
-                    Some(errs) => errs.combine(err),
-                    None => errs = Some(err),
-                }
-            }
-        }
-    }
-    if let Some(e) = errs {
-        Err(e)
-    } else {
-        Ok(types)
-    }
-}

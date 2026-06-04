@@ -19,5 +19,6 @@ mod baz {
 
 // needed for trybuild
 fn main() {
+    #[allow(unused_imports)]
     use baz::pub_scope::init_detours;
 }

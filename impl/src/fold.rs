@@ -61,9 +61,8 @@ impl Detours {
             .map(|func| func.generate_detour_init_with_prefix(self.module_name.as_ref(), struct_name))
             .collect();
         quote::quote! {
-            pub unsafe fn init_detours() -> Result<(), #krate_name::Error> {
+            pub fn init_detours() -> Result<(), #krate_name::Error> {
                 #(#init_funcs;)*
-
                 Ok(())
             }
         }
@@ -77,9 +76,8 @@ impl Detours {
             .map(|func| func.generate_detour_init(self.module_name.as_ref()))
             .collect();
         Item::Verbatim(quote::quote! {
-            pub unsafe fn init_detours() -> Result<(), #krate_name::Error> {
+            pub fn init_detours() -> Result<(), #krate_name::Error> {
                 #(#init_funcs;)*
-
                 Ok(())
             }
         })
@@ -116,10 +114,10 @@ impl DetourInfo {
         };
 
         Item::Verbatim(quote_spanned! {self.hook_attr.span()=>
-            #[allow(non_upper_case_globals)]
+            #[allow(non_upper_case_globals, unused_unsafe)]
             #vis static #detour_name: ::#detour_krate::StaticDetour<#fn_type_sig> = {
                 #[inline(never)]
-                #[allow(unused_unsafe)]
+                #[allow(unused_unsafe, unsafe_op_in_unsafe_fn)]
                 #target_fn_decl {
                     #[allow(unused_unsafe)]
                     (#detour_name.__detour())(#(#arg_names),*)
@@ -168,7 +166,7 @@ impl DetourInfo {
         let abi = &self.hook_attr.abi;
         let unsafety = &self.hook_attr.unsafety;
 
-        quote::quote_spanned! {self.hook_attr.span()=>
+        quote::quote! {
             #unsafety #abi fn __ffi_detour(#(#input_args),*) #output_type
         }
     }
@@ -302,7 +300,7 @@ impl DetourInfo {
         Item::Verbatim(quote_spanned! {self.hook_attr.span()=>
             ::#parent_krate::init_detour(
                 #lookup_new_fn,
-                |addr| {
+                |addr| unsafe {
                     #detour_name
                         .initialize(::#detour_krate::Function::from_ptr(addr), #struct_name::#orig_func_name)?
                         .enable()?;
@@ -321,7 +319,7 @@ impl DetourInfo {
         Item::Verbatim(quote_spanned! {self.hook_attr.span()=>
             ::#parent_krate::init_detour(
                 #lookup_new_fn,
-                |addr| {
+                |addr| unsafe {
                     #detour_name
                         .initialize(::#detour_krate::Function::from_ptr(addr), #orig_func_name)?
                         .enable()?;

@@ -14,5 +14,5 @@ mod lua {
 }
 
 fn main() {
-    unsafe { lua::init_detours().unwrap() };
+    lua::init_detours().unwrap();
 }

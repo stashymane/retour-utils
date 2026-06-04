@@ -12,5 +12,5 @@ impl Foo {
 
 // needed for trybuild
 fn main() {
-    unsafe { Foo::init_detours().unwrap() };
+    Foo::init_detours().unwrap();
 }

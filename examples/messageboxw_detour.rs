@@ -34,7 +34,7 @@ pub use windows::*;
 #[cfg(target_os = "windows")]
 /// Called when the DLL is attached to the process.
 fn main() -> Result<(), Box<dyn Error>> {
-    unsafe { user32::init_detours()? };
+    user32::init_detours()?;
     unsafe {
         MessageBoxW(
             None,
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 #[cfg(target_os = "windows")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "system" fn DllMain(
     _module: HMODULE,

@@ -31,7 +31,7 @@ fn apply_plugin() {
 
 fn main() {
     apply_plugin();
-    unsafe { Lua::init_detours().unwrap() };
+    Lua::init_detours().unwrap();
     // Calling the chain invokes both wrappers then the original:
     // Lua_close__chain.call(std::ptr::null_mut());
 }

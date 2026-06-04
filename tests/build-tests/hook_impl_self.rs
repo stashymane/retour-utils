@@ -12,5 +12,5 @@ impl Bar {
 
 // needed for trybuild
 fn main() {
-    unsafe { Bar::init_detours().unwrap() };
+    Bar::init_detours().unwrap();
 }

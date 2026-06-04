@@ -12,5 +12,5 @@ impl Baz {
 
 // needed for trybuild
 fn main() {
-    unsafe { Baz::init_detours().unwrap() };
+    Baz::init_detours().unwrap();
 }

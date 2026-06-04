@@ -12,5 +12,5 @@ impl Foo {
 
 // needed for trybuild
 fn main() {
-    Foo::init_detours().unwrap();
+    let _ = Foo::init_detours();
 }

@@ -131,16 +131,43 @@ pub fn init_detour(
     init_detour_fn: impl Fn(*const ()) -> retour::Result<()>,
 ) -> Result<()> {
     let handle = match lookup_data.get_module() {
-        Some(name) => Library::load(Path::new(name)).ok(),
-        // Empty string / null opens the current process on both Windows and Linux
-        None => Library::load(Path::new("")).ok(),
+        Some(name) => Library::load(Path::new(name)).map_err(|e| Error::IoError(e))?,
+        None => load_self()?,
     };
-    if let Some(handle) = handle {
-        let Some(addr) = lookup_data.address_from_handle(&handle) else {
-            return Err(Error::ModuleNotLoaded);
-        };
-        init_detour_fn(addr)?;
-    }
+    let Some(addr) = lookup_data.address_from_handle(&handle) else {
+        return Err(Error::SymbolNotFound);
+    };
+    init_detour_fn(addr)?;
 
     Ok(())
+}
+
+/// Open a handle to the current process/executable (the "self" module).
+fn load_self() -> Result<Library> {
+    #[cfg(unix)]
+    {
+        use std::os::raw::c_int;
+        unsafe extern "C" {
+            fn dlopen(filename: *const std::os::raw::c_char, flags: c_int) -> *mut std::ffi::c_void;
+        }
+        const RTLD_LAZY: c_int = 1;
+        let handle = unsafe { dlopen(std::ptr::null(), RTLD_LAZY) };
+        unsafe { Library::from_ptr(handle) }.ok_or_else(|| {
+            Error::IoError(std::io::Error::last_os_error())
+        })
+    }
+    #[cfg(windows)]
+    {
+        unsafe extern "system" {
+            fn GetModuleHandleW(lpModuleName: *const u16) -> *mut std::ffi::c_void;
+        }
+        let handle = unsafe { GetModuleHandleW(std::ptr::null()) };
+        unsafe { Library::from_ptr(handle) }.ok_or_else(|| {
+            Error::IoError(std::io::Error::last_os_error())
+        })
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        Err(Error::ModuleNotLoaded)
+    }
 }

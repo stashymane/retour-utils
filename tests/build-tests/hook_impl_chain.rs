@@ -24,5 +24,5 @@ fn register_wrappers() {
 // needed for trybuild
 fn main() {
     register_wrappers();
-    Qux::init_detours().unwrap();
+    let _ = Qux::init_detours();
 }

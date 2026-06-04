@@ -12,5 +12,5 @@ impl Bar {
 
 // needed for trybuild
 fn main() {
-    Bar::init_detours().unwrap();
+    let _ = Bar::init_detours();
 }

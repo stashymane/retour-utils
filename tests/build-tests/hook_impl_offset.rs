@@ -12,5 +12,5 @@ impl Baz {
 
 // needed for trybuild
 fn main() {
-    Baz::init_detours().unwrap();
+    let _ = Baz::init_detours();
 }

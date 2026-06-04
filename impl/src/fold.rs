@@ -248,7 +248,7 @@ impl DetourInfo {
             #[allow(dead_code)]
             impl #chain_type_name {
                 #[doc(hidden)]
-                pub const fn new(
+                #vis const fn new(
                     detour: &'static ::#parent_krate::__private::StaticDetour<#fn_type_sig>,
                 ) -> Self {
                     Self {
@@ -260,7 +260,7 @@ impl DetourInfo {
                 /// Register a wrapper closure. Each wrapper receives the arguments plus a `next`
                 /// closure that invokes the remaining wrappers and ultimately the original function.
                 /// If a wrapper does not call `next`, the inner wrappers and original are skipped.
-                pub fn hook<__F>(&self, f: __F)
+                #vis fn hook<__F>(&self, f: __F)
                 where
                     __F: Fn(#(#arg_types,)* &dyn Fn(#(#arg_types),*) #ret_ty) #ret_ty + Send + Sync + 'static,
                 {
@@ -269,7 +269,7 @@ impl DetourInfo {
 
                 /// Call the wrapper chain. Each wrapper may call `next` to proceed to the next
                 /// wrapper; the last `next` calls the original detoured function.
-                pub fn call(&self, #(#typed_args),*) #ret_ty {
+                #vis fn call(&self, #(#typed_args),*) #ret_ty {
                     let guard = self.wrappers.lock().unwrap();
                     let detour = self.detour;
 

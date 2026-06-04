@@ -11,10 +11,10 @@ impl Qux {
 }
 
 fn register_wrappers() {
-    Qux_process__chain.hook(|_this, _value| {
+    Qux::process.hook(|_this, _value| {
         // first wrapper
     });
-    Qux_process__chain.hook(|_this, _value| {
+    Qux::process.hook(|_this, _value| {
         // second wrapper
     });
 }

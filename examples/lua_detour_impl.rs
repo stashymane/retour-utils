@@ -21,10 +21,10 @@ impl Lua {
 }
 
 fn apply_plugin() {
-    Lua_close__chain.hook(|state| {
+    Lua::close.hook(|state| {
         let _ = state;
     });
-    Lua_close__chain.hook(|state| {
+    Lua::close.hook(|state| {
         let _ = state;
     });
 }
@@ -33,5 +33,5 @@ fn main() {
     apply_plugin();
     Lua::init_detours().unwrap();
     // Calling the chain invokes both wrappers then the original:
-    // Lua_close__chain.call(std::ptr::null_mut());
+    // Lua::close.call(std::ptr::null_mut());
 }

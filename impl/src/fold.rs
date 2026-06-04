@@ -1,4 +1,4 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
 use syn::{fold::Fold, spanned::Spanned, Ident, ImplItemFn, Item, ItemFn, LitStr, Signature};
 
@@ -32,6 +32,22 @@ impl Detours {
         items
     }
 
+    pub fn generate_chain_aliases_for_mod(&self) -> Vec<Item> {
+        self.detours
+            .iter()
+            .filter(|info| info.hook_attr.chain)
+            .map(|info| info.get_chain_mod_alias())
+            .collect()
+    }
+
+    pub fn generate_chain_consts_for_impl(&self) -> Vec<TokenStream> {
+        self.detours
+            .iter()
+            .filter(|info| info.hook_attr.chain)
+            .map(|info| info.get_chain_impl_const())
+            .collect()
+    }
+
     /// Returns the const expression containing the module name
     /// ```
     /// pub const MODULE_NAME: &str = "lua52.dll";
@@ -41,7 +57,7 @@ impl Detours {
         let span = module_name
             .as_ref()
             .map(|m| m.span())
-            .unwrap_or_else(proc_macro2::Span::call_site);
+            .unwrap_or_else(Span::call_site);
         let value = module_name
             .as_ref()
             .map(|m| quote::quote! { #m })
@@ -53,7 +69,7 @@ impl Detours {
         })
     }
 
-    pub fn generate_init_detours_for_impl(&self, struct_name: &syn::Ident) -> proc_macro2::TokenStream {
+    pub fn generate_init_detours_for_impl(&self, struct_name: &syn::Ident) -> TokenStream {
         let krate_name = crate_refs::parent_crate();
         let init_funcs: Vec<Item> = self
             .detours
@@ -88,6 +104,7 @@ pub struct DetourInfo {
     pub hook_attr: HookAttributeArgs,
     pub fn_sig: Signature,
     pub self_ty: Option<Ident>,
+    pub original_fn_name: Ident,
 }
 
 impl DetourInfo {
@@ -95,7 +112,7 @@ impl DetourInfo {
         let vis = self.hook_attr.vis.clone();
 
         let detour_krate = crate_refs::retour_crate();
-        let detour_name: &proc_macro2::Ident = &self.hook_attr.detour_name;
+        let detour_name: &Ident = &self.hook_attr.detour_name;
         let fn_type_sig = match &self.self_ty {
             Some(st) => fn_type_with_self(&self.fn_sig, &self.hook_attr, st),
             None => fn_type(&self.fn_sig, &self.hook_attr),
@@ -171,6 +188,30 @@ impl DetourInfo {
         }
     }
 
+    fn get_chain_mod_alias(&self) -> Item {
+        let vis = self.hook_attr.vis.clone();
+        let fn_name = &self.original_fn_name;
+        let detour_name = &self.hook_attr.detour_name;
+        let chain_name = syn::Ident::new(&format!("{}__chain", detour_name), detour_name.span());
+        let chain_type_name = syn::Ident::new(&format!("{}__ChainType", detour_name), detour_name.span());
+        Item::Verbatim(quote::quote! {
+            #[allow(non_upper_case_globals)]
+            #vis static #fn_name: &#chain_type_name = &#chain_name;
+        })
+    }
+
+    fn get_chain_impl_const(&self) -> TokenStream {
+        let vis = self.hook_attr.vis.clone();
+        let fn_name = &self.original_fn_name;
+        let detour_name = &self.hook_attr.detour_name;
+        let chain_name = syn::Ident::new(&format!("{}__chain", detour_name), detour_name.span());
+        let chain_type_name = syn::Ident::new(&format!("{}__ChainType", detour_name), detour_name.span());
+        quote::quote! {
+            #[allow(non_upper_case_globals)]
+            #vis const #fn_name: &#chain_type_name = &#chain_name;
+        }
+    }
+
     fn get_chain_static(&self) -> Item {
         let vis = self.hook_attr.vis.clone();
         let detour_name = &self.hook_attr.detour_name;
@@ -241,7 +282,7 @@ impl DetourInfo {
     /// Returns `(typed_args, arg_types, arg_names, return_type)` tokens for chain call/hook methods.
     fn chain_call_parts(
         &self,
-    ) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>, proc_macro2::TokenStream) {
+    ) -> (Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>, TokenStream) {
         use crate::helpers::{receiver_to_ptr_arg, replace_self_in_type};
         use syn::FnArg;
 
@@ -274,7 +315,7 @@ impl DetourInfo {
                         }
                     } else {
                         // fallback: generate a positional name
-                        let name = syn::Ident::new(&format!("__arg{}", i), proc_macro2::Span::call_site());
+                        let name = syn::Ident::new(&format!("__arg{}", i), Span::call_site());
                         typed_args.push(quote::quote! { #name: *mut () });
                         arg_types.push(quote::quote! { *mut () });
                         arg_names.push(quote::quote! { #name });
@@ -292,7 +333,7 @@ impl DetourInfo {
     }
 
     fn generate_detour_init_with_prefix(&self, module_name: Option<&LitStr>, struct_name: &syn::Ident) -> Item {
-        let lookup_new_fn = (self.hook_attr.hook_info).get_lookup_data_new_fn(module_name);
+        let lookup_new_fn = self.hook_attr.hook_info.get_lookup_data_new_fn(module_name);
         let detour_name = &self.hook_attr.detour_name;
         let orig_func_name = &self.fn_sig.ident;
         let parent_krate = crate_refs::parent_crate();
@@ -311,7 +352,7 @@ impl DetourInfo {
     }
 
     fn generate_detour_init(&self, module_name: Option<&LitStr>) -> Item {
-        let lookup_new_fn = (self.hook_attr.hook_info).get_lookup_data_new_fn(module_name);
+        let lookup_new_fn = self.hook_attr.hook_info.get_lookup_data_new_fn(module_name);
         let detour_name = &self.hook_attr.detour_name;
         let orig_func_name = &self.fn_sig.ident;
         let parent_krate = crate_refs::parent_crate();
@@ -333,6 +374,7 @@ impl DetourInfo {
 impl Detours {
     pub fn collect_impl_item_fn(&mut self, item_fn: ImplItemFn, self_ty: &Ident) -> ImplItemFn {
         let mut attrs = Vec::new();
+        let mut renamed_sig: Option<Signature> = None;
 
         for attr in item_fn.attrs {
             if !attr.path().is_ident("hook") {
@@ -342,18 +384,33 @@ impl Detours {
             let Ok(hook_attrs) = attr.parse_args::<HookAttributeArgs>() else {
                 continue;
             };
+            let original_fn_name = item_fn.sig.ident.clone();
+            let fn_sig = if hook_attrs.chain {
+                let new_ident = syn::Ident::new(
+                    &format!("__{}_detour", original_fn_name),
+                    original_fn_name.span(),
+                );
+                let mut sig = item_fn.sig.clone();
+                sig.ident = new_ident;
+                renamed_sig = Some(sig.clone());
+                sig
+            } else {
+                item_fn.sig.clone()
+            };
             self.detours.push(DetourInfo {
                 hook_attr: hook_attrs,
-                fn_sig: item_fn.sig.clone(),
+                fn_sig,
                 self_ty: Some(self_ty.clone()),
+                original_fn_name,
             });
         }
-        ImplItemFn { attrs, ..item_fn }
+        let sig = renamed_sig.unwrap_or(item_fn.sig);
+        ImplItemFn { attrs, sig, block: item_fn.block, vis: item_fn.vis, defaultness: item_fn.defaultness }
     }
 }
 
 impl Fold for Detours {
-    fn fold_item_fn(&mut self, item_fn: syn::ItemFn) -> syn::ItemFn {
+    fn fold_item_fn(&mut self, item_fn: ItemFn) -> ItemFn {
         let mut attrs = Vec::new();
 
         for attr in item_fn.attrs {
@@ -366,6 +423,7 @@ impl Fold for Detours {
             };
             self.detours.push(DetourInfo {
                 hook_attr: hook_attrs,
+                original_fn_name: item_fn.sig.ident.clone(),
                 fn_sig: item_fn.sig.clone(),
                 self_ty: None,
             })

@@ -28,6 +28,10 @@ pub fn expand_impl(impl_block: ItemImpl, attribute_meta: Option<LitStr>) -> Resu
     let init_fn = detours.generate_init_detours_for_impl(&struct_name);
     new_items.push(ImplItem::Verbatim(init_fn));
 
+    for chain_const in detours.generate_chain_consts_for_impl() {
+        new_items.push(ImplItem::Verbatim(chain_const));
+    }
+
     let statics = detours.generate_detour_decls();
 
     let rebuilt_impl = ItemImpl {
@@ -54,6 +58,7 @@ pub fn expand(mod_block: ItemMod, attribute_meta: Option<LitStr>) -> Result<Toke
     content.push(detours.get_module_name_decl());
     let decls = detours.generate_detour_decls();
     content.extend(decls);
+    content.extend(detours.generate_chain_aliases_for_mod());
     content.push(detours.generate_init_detours());
 
     Ok(result.to_token_stream())

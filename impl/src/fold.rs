@@ -231,6 +231,7 @@ impl DetourInfo {
 
         // Build typed arg list and arg name list for the call/hook methods
         let (typed_args, arg_types, arg_names, ret_ty) = self.chain_call_parts();
+        let maybe_unsafe = self.hook_attr.unsafety.as_ref().map(|_| quote::quote! { unsafe });
 
         Item::Verbatim(quote_spanned! {self.hook_attr.span()=>
             #[allow(non_camel_case_types, dead_code)]
@@ -281,7 +282,7 @@ impl DetourInfo {
                         if let Some((first, rest)) = wrappers.split_first() {
                             first(#(#arg_names,)* &|#(#arg_names),*| call_chain(rest, detour, #(#arg_names),*))
                         } else {
-                            unsafe { detour.call(#(#arg_names),*) }
+                            #maybe_unsafe { detour.call(#(#arg_names),*) }
                         }
                     }
                     call_chain(wrappers, detour, #(#arg_names),*)

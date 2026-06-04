@@ -6,7 +6,7 @@ struct Bar;
 impl Bar {
     #[hook(extern "C" Bar_method, symbol = "method")]
     fn method(this: *mut Self, value: i32) -> i32 {
-        unsafe { Bar_method.call(this, value) }
+        Bar_method.call(this, value)
     }
 }
 

@@ -6,7 +6,7 @@ struct Baz;
 impl Baz {
     #[hook(extern "C" Baz_func, offset = 0x1234)]
     fn func(x: f32) -> f32 {
-        unsafe { Baz_func.call(x) }
+        Baz_func.call(x)
     }
 }
 

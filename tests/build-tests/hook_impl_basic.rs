@@ -6,7 +6,7 @@ struct Foo;
 impl Foo {
     #[hook(extern "C" Foo_bar, symbol = "bar")]
     fn bar(x: i32) -> i32 {
-        unsafe { Foo_bar.call(x) }
+        Foo_bar.call(x)
     }
 }
 

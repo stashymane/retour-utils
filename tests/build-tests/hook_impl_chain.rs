@@ -6,7 +6,7 @@ struct Qux;
 impl Qux {
     #[hook(extern "C" Qux_process, symbol = "process", chain)]
     fn process(this: *mut Self, value: i32) {
-        unsafe { Qux_process.call(this, value) }
+        Qux_process.call(this, value)
     }
 }
 

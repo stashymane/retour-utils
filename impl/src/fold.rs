@@ -9,12 +9,12 @@ use crate::{
 };
 
 pub struct Detours {
-    module_name: LitStr,
+    module_name: Option<LitStr>,
     detours: Vec<DetourInfo>,
 }
 
 impl Detours {
-    pub fn new(module_name: LitStr) -> Self {
+    pub fn new(module_name: Option<LitStr>) -> Self {
         Self {
             module_name,
             detours: Vec::new(),
@@ -22,10 +22,14 @@ impl Detours {
     }
 
     pub fn generate_detour_decls(&self) -> Vec<Item> {
-        self.detours
-            .iter()
-            .map(|info| info.get_static_detour())
-            .collect()
+        let mut items = Vec::new();
+        for info in &self.detours {
+            items.push(info.get_static_detour());
+            if info.hook_attr.chain {
+                items.push(info.get_chain_static());
+            }
+        }
+        items
     }
 
     /// Returns the const expression containing the module name
@@ -34,10 +38,18 @@ impl Detours {
     /// ```
     pub fn get_module_name_decl(&self) -> Item {
         let module_name = &self.module_name;
+        let span = module_name
+            .as_ref()
+            .map(|m| m.span())
+            .unwrap_or_else(proc_macro2::Span::call_site);
+        let value = module_name
+            .as_ref()
+            .map(|m| quote::quote! { #m })
+            .unwrap_or_else(|| quote::quote! { "" });
 
-        Item::Verbatim(quote_spanned! {self.module_name.span()=>
+        Item::Verbatim(quote_spanned! {span=>
             #[allow(unused)]
-            pub const MODULE_NAME: &str = #module_name;
+            pub const MODULE_NAME: &str = #value;
         })
     }
 
@@ -46,10 +58,10 @@ impl Detours {
         let init_funcs: Vec<Item> = self
             .detours
             .iter()
-            .map(|func| func.generate_detour_init_with_prefix(&self.module_name, struct_name))
+            .map(|func| func.generate_detour_init_with_prefix(self.module_name.as_ref(), struct_name))
             .collect();
         quote::quote! {
-            pub unsafe fn initialize_hooks() -> Result<(), #krate_name::Error> {
+            pub unsafe fn init_detours() -> Result<(), #krate_name::Error> {
                 #(#init_funcs;)*
 
                 Ok(())
@@ -62,7 +74,7 @@ impl Detours {
         let init_funcs: Vec<Item> = self
             .detours
             .iter()
-            .map(|func| func.generate_detour_init(&self.module_name))
+            .map(|func| func.generate_detour_init(self.module_name.as_ref()))
             .collect();
         Item::Verbatim(quote::quote! {
             pub unsafe fn init_detours() -> Result<(), #krate_name::Error> {
@@ -161,7 +173,127 @@ impl DetourInfo {
         }
     }
 
-    fn generate_detour_init_with_prefix(&self, module_name: &LitStr, struct_name: &syn::Ident) -> Item {
+    fn get_chain_static(&self) -> Item {
+        let vis = self.hook_attr.vis.clone();
+        let detour_name = &self.hook_attr.detour_name;
+        let chain_name = syn::Ident::new(
+            &format!("{}__chain", detour_name),
+            detour_name.span(),
+        );
+        let chain_type_name = syn::Ident::new(
+            &format!("{}__ChainType", detour_name),
+            detour_name.span(),
+        );
+        let parent_krate = crate_refs::parent_crate();
+        let fn_type_sig = match &self.self_ty {
+            Some(st) => fn_type_with_self(&self.fn_sig, &self.hook_attr, st),
+            None => fn_type(&self.fn_sig, &self.hook_attr),
+        };
+
+        // Build typed arg list and arg name list for the call/hook methods
+        let (typed_args, arg_types, arg_names, ret_ty) = self.chain_call_parts();
+
+        Item::Verbatim(quote_spanned! {self.hook_attr.span()=>
+            #[allow(non_camel_case_types, dead_code)]
+            #vis struct #chain_type_name {
+                detour: &'static ::#parent_krate::__private::StaticDetour<#fn_type_sig>,
+                wrappers: ::#parent_krate::__private::Mutex<
+                    ::std::vec::Vec<::std::boxed::Box<dyn Fn(#(#arg_types),*) + Send + Sync>>
+                >,
+            }
+
+            #[allow(dead_code)]
+            impl #chain_type_name {
+                #[doc(hidden)]
+                pub const fn new(
+                    detour: &'static ::#parent_krate::__private::StaticDetour<#fn_type_sig>,
+                ) -> Self {
+                    Self {
+                        detour,
+                        wrappers: ::#parent_krate::__private::Mutex::new(::std::vec::Vec::new()),
+                    }
+                }
+
+                /// Register a wrapper closure to be called before the original function.
+                /// Wrappers are called in registration order, then the original is called last.
+                pub fn hook<__F>(&self, f: __F)
+                where
+                    __F: Fn(#(#arg_types),*) + Send + Sync + 'static,
+                {
+                    self.wrappers.lock().unwrap().push(::std::boxed::Box::new(f));
+                }
+
+                /// Call all registered wrappers in order, then the original function.
+                pub fn call(&self, #(#typed_args),*) #ret_ty {
+                    let guard = self.wrappers.lock().unwrap();
+                    for wrapper in guard.iter() {
+                        wrapper(#(#arg_names),*);
+                    }
+                    drop(guard);
+                    unsafe { self.detour.call(#(#arg_names),*) }
+                }
+            }
+
+            #[allow(non_upper_case_globals)]
+            #vis static #chain_name: #chain_type_name =
+                #chain_type_name::new(&#detour_name);
+        })
+    }
+
+    /// Returns `(typed_args, arg_types, arg_names, return_type)` tokens for chain call/hook methods.
+    fn chain_call_parts(
+        &self,
+    ) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>, proc_macro2::TokenStream) {
+        use crate::helpers::{receiver_to_ptr_arg, replace_self_in_type};
+        use syn::FnArg;
+
+        let mut typed_args = Vec::new();
+        let mut arg_types = Vec::new();
+        let mut arg_names = Vec::new();
+
+        for (i, arg) in self.fn_sig.inputs.iter().enumerate() {
+            match arg {
+                FnArg::Typed(pt) => {
+                    let ty = if let Some(st) = &self.self_ty {
+                        replace_self_in_type(*pt.ty.clone(), st)
+                    } else {
+                        *pt.ty.clone()
+                    };
+                    let pat = &pt.pat;
+                    typed_args.push(quote::quote! { #pat: #ty });
+                    arg_types.push(quote::quote! { #ty });
+                    arg_names.push(quote::quote! { #pat });
+                }
+                FnArg::Receiver(recv) => {
+                    if let Some(st) = &self.self_ty {
+                        let typed = receiver_to_ptr_arg(recv, st);
+                        if let FnArg::Typed(pt) = typed {
+                            let pat = &pt.pat;
+                            let ty = &pt.ty;
+                            typed_args.push(quote::quote! { #pat: #ty });
+                            arg_types.push(quote::quote! { #ty });
+                            arg_names.push(quote::quote! { #pat });
+                        }
+                    } else {
+                        // fallback: generate a positional name
+                        let name = syn::Ident::new(&format!("__arg{}", i), proc_macro2::Span::call_site());
+                        typed_args.push(quote::quote! { #name: *mut () });
+                        arg_types.push(quote::quote! { *mut () });
+                        arg_names.push(quote::quote! { #name });
+                    }
+                }
+            }
+        }
+
+        let ret_ty = match &self.fn_sig.output {
+            syn::ReturnType::Default => quote::quote! {},
+            syn::ReturnType::Type(arrow, ty) => quote::quote! { #arrow #ty },
+        };
+
+        (typed_args, arg_types, arg_names, ret_ty)
+    }
+
+    fn generate_detour_init_with_prefix(&self, module_name: Option<&LitStr>, struct_name: &syn::Ident) -> Item {
         let lookup_new_fn = (self.hook_attr.hook_info).get_lookup_data_new_fn(module_name);
         let detour_name = &self.hook_attr.detour_name;
         let orig_func_name = &self.fn_sig.ident;
@@ -180,7 +312,7 @@ impl DetourInfo {
         })
     }
 
-    fn generate_detour_init(&self, module_name: &LitStr) -> Item {
+    fn generate_detour_init(&self, module_name: Option<&LitStr>) -> Item {
         let lookup_new_fn = (self.hook_attr.hook_info).get_lookup_data_new_fn(module_name);
         let detour_name = &self.hook_attr.detour_name;
         let orig_func_name = &self.fn_sig.ident;

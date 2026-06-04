@@ -4,7 +4,7 @@ use syn::{fold::Fold, spanned::Spanned, ImplItem, ItemImpl, ItemMod, LitStr, Typ
 
 use crate::fold::Detours;
 
-pub fn expand_impl(impl_block: ItemImpl, attribute_meta: LitStr) -> Result<TokenStream, syn::Error> {
+pub fn expand_impl(impl_block: ItemImpl, attribute_meta: Option<LitStr>) -> Result<TokenStream, syn::Error> {
     let struct_name = match impl_block.self_ty.as_ref() {
         Type::Path(tp) => tp
             .path
@@ -44,7 +44,7 @@ pub fn expand_impl(impl_block: ItemImpl, attribute_meta: LitStr) -> Result<Token
     Ok(output)
 }
 
-pub fn expand(mod_block: ItemMod, attribute_meta: LitStr) -> Result<TokenStream, syn::Error> {
+pub fn expand(mod_block: ItemMod, attribute_meta: Option<LitStr>) -> Result<TokenStream, syn::Error> {
     let mut detours = Detours::new(attribute_meta);
     let mut result = detours.fold_item_mod(mod_block);
 

@@ -8,6 +8,7 @@ pub mod kw {
     syn::custom_keyword!(hook);
     syn::custom_keyword!(offset);
     syn::custom_keyword!(symbol);
+    syn::custom_keyword!(chain);
 }
 
 pub struct HookAttributeArgs {
@@ -17,18 +18,27 @@ pub struct HookAttributeArgs {
     pub detour_name: Ident,
     pub comma: Token![,],
     pub hook_info: HookArg,
+    /// If `true`, a `HookChain` static will be emitted alongside the `StaticDetour`.
+    pub chain: bool,
 }
 
 impl Parse for HookAttributeArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        Ok(Self {
-            vis: input.parse()?,
-            unsafety: input.parse()?,
-            abi: input.parse()?,
-            detour_name: input.parse()?,
-            comma: input.parse()?,
-            hook_info: input.parse()?,
-        })
+        let vis = input.parse()?;
+        let unsafety = input.parse()?;
+        let abi = input.parse()?;
+        let detour_name = input.parse()?;
+        let comma = input.parse()?;
+        let hook_info = input.parse()?;
+        // Optional trailing `, chain`
+        let chain = if input.peek(Token![,]) && input.peek2(kw::chain) {
+            let _: Token![,] = input.parse()?;
+            let _: kw::chain = input.parse()?;
+            true
+        } else {
+            false
+        };
+        Ok(Self { vis, unsafety, abi, detour_name, comma, hook_info, chain })
     }
 }
 
@@ -54,19 +64,21 @@ pub enum HookArg {
 }
 
 impl HookArg {
-    pub fn get_lookup_data_new_fn(&self, module_name: &LitStr) -> TokenStream {
+    pub fn get_lookup_data_new_fn(&self, module_name: Option<&LitStr>) -> TokenStream {
         let krate_name = parent_crate();
-        match self {
-            Self::Offset { value, .. } => {
-                quote::quote! {
-                    ::#krate_name::LookupData::from_offset(#module_name, #value)
-                }
-            }
-            Self::Symbol { value, .. } => {
-                quote::quote! {
-                    ::#krate_name::LookupData::from_symbol(#module_name, #value)
-                }
-            }
+        match (self, module_name) {
+            (Self::Offset { value, .. }, Some(m)) => quote::quote! {
+                ::#krate_name::LookupData::from_offset(#m, #value)
+            },
+            (Self::Offset { value, .. }, None) => quote::quote! {
+                ::#krate_name::LookupData::from_self_offset(#value)
+            },
+            (Self::Symbol { value, .. }, Some(m)) => quote::quote! {
+                ::#krate_name::LookupData::from_symbol(#m, #value)
+            },
+            (Self::Symbol { value, .. }, None) => quote::quote! {
+                ::#krate_name::LookupData::from_self_symbol(#value)
+            },
         }
     }
 }

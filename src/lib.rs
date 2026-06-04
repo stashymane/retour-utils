@@ -4,6 +4,14 @@ use std::{ffi::CString, path::Path};
 
 pub use error::Error;
 use minidl::Library;
+
+/// Private re-exports used by macro-generated code. Not part of the public API.
+#[doc(hidden)]
+pub mod __private {
+    pub use retour::StaticDetour;
+    pub use std::sync::Mutex;
+}
+
 /// Macro used to hook multiple `retour::StaticDetour`s at once
 ///
 /// Reads a `mod` block and generating static detours from #[hook] macros.
@@ -68,6 +76,10 @@ pub enum LookupData {
         module: &'static str,
         symbol: &'static str,
     },
+    /// Offset relative to the current executable/process base address.
+    SelfOffset { offset: usize },
+    /// Exported symbol from the current executable/process.
+    SelfSymbol { symbol: &'static str },
 }
 
 impl LookupData {
@@ -79,19 +91,28 @@ impl LookupData {
         Self::Symbol { module, symbol }
     }
 
-    fn get_module(&self) -> &str {
+    pub const fn from_self_offset(offset: usize) -> Self {
+        Self::SelfOffset { offset }
+    }
+
+    pub const fn from_self_symbol(symbol: &'static str) -> Self {
+        Self::SelfSymbol { symbol }
+    }
+
+    fn get_module(&self) -> Option<&str> {
         match self {
-            Self::Offset { module, .. } => module,
-            Self::Symbol { module, .. } => module,
+            Self::Offset { module, .. } => Some(module),
+            Self::Symbol { module, .. } => Some(module),
+            Self::SelfOffset { .. } | Self::SelfSymbol { .. } => None,
         }
     }
 
     fn address_from_handle(&self, handle: &Library) -> Option<*const ()> {
         match self {
-            LookupData::Offset { offset, .. } => {
+            LookupData::Offset { offset, .. } | LookupData::SelfOffset { offset } => {
                 Some((handle.as_ptr() as usize + offset) as *const ())
             }
-            LookupData::Symbol { symbol, .. } => {
+            LookupData::Symbol { symbol, .. } | LookupData::SelfSymbol { symbol } => {
                 let c_symbol = CString::new(*symbol).ok()?;
                 let symbol_with_null_terminator =
                     String::from_utf8(c_symbol.into_bytes_with_nul()).ok()?;
@@ -109,8 +130,12 @@ pub unsafe fn init_detour(
     lookup_data: LookupData,
     init_detour_fn: fn(*const ()) -> retour::Result<()>,
 ) -> Result<()> {
-    // Get handle to module (aka dll / so)
-    if let Ok(handle) = Library::load(Path::new(lookup_data.get_module())) {
+    let handle = match lookup_data.get_module() {
+        Some(name) => Library::load(Path::new(name)).ok(),
+        // Empty string / null opens the current process on both Windows and Linux
+        None => Library::load(Path::new("")).ok(),
+    };
+    if let Some(handle) = handle {
         let Some(addr) = lookup_data.address_from_handle(&handle) else {
             return Err(Error::ModuleNotLoaded);
         };

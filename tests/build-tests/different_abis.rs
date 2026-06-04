@@ -1,7 +1,7 @@
-#[cfg(target_os = "windows")]
+#[cfg(target_family = "windows")]
 use retour_utils::hook_module;
 
-#[cfg(target_os = "windows")]
+#[cfg(target_family = "windows")]
 #[hook_module("foo.bar")]
 mod hooks {
     #[hook(NormalHook, symbol = "Foo")]
@@ -16,16 +16,19 @@ mod hooks {
         }
     }
 
+    #[cfg(target_arch = "i686")]
     #[hook(extern "cdecl" CDeclAbiHook, symbol = "Foo")]
     fn cdecl_abi_hook() -> i32 {
         CDeclAbiHook.call()
     }
 
+    #[cfg(target_arch = "i686")]
     #[hook(extern "stdcall" StdCallAbiHook, symbol = "Foo")]
     fn stdcall_abi_hook() -> i32 {
         StdCallAbiHook.call()
     }
 
+    #[cfg(target_arch = "i686")]
     #[hook(extern "fastcall" FastCallAbiHook, symbol = "Foo")]
     fn fastcall_abi_hook() -> i32 {
         FastCallAbiHook.call()

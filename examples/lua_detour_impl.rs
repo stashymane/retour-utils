@@ -21,11 +21,13 @@ impl Lua {
 }
 
 fn apply_plugin() {
-    Lua::close.hook(|state| {
-        let _ = state;
+    Lua::close.hook(|state, next| {
+        // first wrapper: do something, then call the rest of the chain
+        next(state);
     });
-    Lua::close.hook(|state| {
-        let _ = state;
+    Lua::close.hook(|state, next| {
+        // second wrapper: do something, then call the rest of the chain
+        next(state);
     });
 }
 

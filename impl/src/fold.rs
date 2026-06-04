@@ -237,7 +237,9 @@ impl DetourInfo {
             #vis struct #chain_type_name {
                 detour: &'static ::#parent_krate::__private::StaticDetour<#fn_type_sig>,
                 wrappers: ::#parent_krate::__private::Mutex<
-                    ::std::vec::Vec<::std::boxed::Box<dyn Fn(#(#arg_types),*) + Send + Sync>>
+                    ::std::vec::Vec<::std::boxed::Box<
+                        dyn Fn(#(#arg_types,)* &dyn Fn(#(#arg_types),*) #ret_ty) #ret_ty + Send + Sync
+                    >>
                 >,
             }
 
@@ -253,23 +255,36 @@ impl DetourInfo {
                     }
                 }
 
-                /// Register a wrapper closure to be called before the original function.
-                /// Wrappers are called in registration order, then the original is called last.
+                /// Register a wrapper closure. Each wrapper receives the arguments plus a `next`
+                /// closure that invokes the remaining wrappers and ultimately the original function.
+                /// If a wrapper does not call `next`, the inner wrappers and original are skipped.
                 pub fn hook<__F>(&self, f: __F)
                 where
-                    __F: Fn(#(#arg_types),*) + Send + Sync + 'static,
+                    __F: Fn(#(#arg_types,)* &dyn Fn(#(#arg_types),*) #ret_ty) #ret_ty + Send + Sync + 'static,
                 {
                     self.wrappers.lock().unwrap().push(::std::boxed::Box::new(f));
                 }
 
-                /// Call all registered wrappers in order, then the original function.
+                /// Call the wrapper chain. Each wrapper may call `next` to proceed to the next
+                /// wrapper; the last `next` calls the original detoured function.
                 pub fn call(&self, #(#typed_args),*) #ret_ty {
                     let guard = self.wrappers.lock().unwrap();
-                    for wrapper in guard.iter() {
-                        wrapper(#(#arg_names),*);
+                    let detour = self.detour;
+
+                    let wrappers_rev: ::std::vec::Vec<&_> = guard.iter().rev().collect();
+                    let wrappers: &[&_] = &wrappers_rev;
+                    fn call_chain<'a>(
+                        wrappers: &'a [&'a ::std::boxed::Box<dyn Fn(#(#arg_types,)* &dyn Fn(#(#arg_types),*) #ret_ty) #ret_ty + Send + Sync>],
+                        detour: &'static ::#parent_krate::__private::StaticDetour<#fn_type_sig>,
+                        #(#typed_args),*
+                    ) #ret_ty {
+                        if let Some((first, rest)) = wrappers.split_first() {
+                            first(#(#arg_names,)* &|#(#arg_names),*| call_chain(rest, detour, #(#arg_names),*))
+                        } else {
+                            unsafe { detour.call(#(#arg_names),*) }
+                        }
                     }
-                    drop(guard);
-                    unsafe { self.detour.call(#(#arg_names),*) }
+                    call_chain(wrappers, detour, #(#arg_names),*)
                 }
             }
 

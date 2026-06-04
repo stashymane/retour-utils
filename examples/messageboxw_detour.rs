@@ -1,26 +1,37 @@
 //! A `MessageBoxW` detour example.
 //!
 //! Ensure the crate is compiled as a 'cdylib' library to allow C interop.
-use retour_utils_impl::hook_module;
-use std::error::Error;
-use std::ffi::c_void;
-use windows::w;
-use windows::Win32::Foundation::{BOOL, HMODULE};
-use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
-use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_OKCANCEL};
 
-#[hook_module("user32.dll")]
-mod user32 {
-    use windows::{core::PCWSTR, w, Win32::Foundation::HWND};
+#[cfg(target_os = "windows")]
+mod windows {
+    use retour_utils_impl::hook_module;
 
-    #[hook(unsafe extern "system" MessageBoxWHook, symbol = "MessageBoxW")]
-    fn messageboxw_detour(hwnd: HWND, text: PCWSTR, _caption: PCWSTR, u_type: u32) -> i32 {
-        // Call the original `MessageBoxW`, but replace the caption
-        let replaced_caption = w!("Nope, Detoured!");
-        unsafe { MessageBoxWHook.call(hwnd, text, replaced_caption, u_type) }
+    pub use std::error::Error;
+    pub use std::ffi::c_void;
+
+    pub use ::windows::core::{w, BOOL};
+    pub use ::windows::Win32::Foundation::HMODULE;
+    pub use ::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
+    pub use ::windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_OKCANCEL};
+
+    #[hook_module("user32.dll")]
+    pub mod user32 {
+        use windows::{core::PCWSTR, Win32::Foundation::HWND};
+        use windows::core::w;
+        #[hook(unsafe extern "system" MessageBoxWHook, symbol = "MessageBoxW")]
+
+        fn messageboxw_detour(hwnd: HWND, text: PCWSTR, _caption: PCWSTR, u_type: u32) -> i32 {
+            // Call the original `MessageBoxW`, but replace the caption
+            let replaced_caption = w!("Nope, Detoured!");
+            unsafe { MessageBoxWHook.call(hwnd, text, replaced_caption, u_type) }
+        }
     }
 }
 
+#[cfg(target_os = "windows")]
+pub use windows::*;
+
+#[cfg(target_os = "windows")]
 /// Called when the DLL is attached to the process.
 fn main() -> Result<(), Box<dyn Error>> {
     unsafe { user32::init_detours()? };
@@ -36,6 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
 #[no_mangle]
 #[allow(non_snake_case)]
 pub unsafe extern "system" fn DllMain(
@@ -47,10 +59,13 @@ pub unsafe extern "system" fn DllMain(
         // A console may be useful for printing to 'stdout'
         // winapi::um::consoleapi::AllocConsole();
 
-        // Preferably a thread should be created here instead, since as few
+        // Preferably, a thread should be created here instead, since as few
         // operations as possible should be performed within `DllMain`.
         main().is_ok().into()
     } else {
         true.into()
     }
 }
+
+#[cfg(not(target_os = "windows"))]
+fn main() {}

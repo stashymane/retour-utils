@@ -16,16 +16,19 @@ mod hooks {
         }
     }
 
+    #[cfg(all(target_family = "windows", target_arch = "x86"))]
     #[hook(extern "cdecl" CDeclAbiHook, symbol = "Foo")]
     fn cdecl_abi_hook() -> i32 {
         CDeclAbiHook.call()
     }
 
+    #[cfg(all(target_family = "windows", target_arch = "x86"))]
     #[hook(extern "stdcall" StdCallAbiHook, symbol = "Foo")]
     fn stdcall_abi_hook() -> i32 {
         StdCallAbiHook.call()
     }
 
+    #[cfg(all(target_family = "windows", target_arch = "x86"))]
     #[hook(extern "fastcall" FastCallAbiHook, symbol = "Foo")]
     fn fastcall_abi_hook() -> i32 {
         FastCallAbiHook.call()

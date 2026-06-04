@@ -105,6 +105,7 @@ pub struct DetourInfo {
     pub fn_sig: Signature,
     pub self_ty: Option<Ident>,
     pub original_fn_name: Ident,
+    pub fn_vis: syn::Visibility,
 }
 
 impl DetourInfo {
@@ -189,7 +190,7 @@ impl DetourInfo {
     }
 
     fn get_chain_mod_alias(&self) -> Item {
-        let vis = self.hook_attr.vis.clone();
+        let vis = self.fn_vis.clone();
         let fn_name = &self.original_fn_name;
         let detour_name = &self.hook_attr.detour_name;
         let chain_name = syn::Ident::new(&format!("{}__chain", detour_name), detour_name.span());
@@ -201,7 +202,7 @@ impl DetourInfo {
     }
 
     fn get_chain_impl_const(&self) -> TokenStream {
-        let vis = self.hook_attr.vis.clone();
+        let vis = self.fn_vis.clone();
         let fn_name = &self.original_fn_name;
         let detour_name = &self.hook_attr.detour_name;
         let chain_name = syn::Ident::new(&format!("{}__chain", detour_name), detour_name.span());
@@ -213,7 +214,7 @@ impl DetourInfo {
     }
 
     fn get_chain_static(&self) -> Item {
-        let vis = self.hook_attr.vis.clone();
+        let vis = self.fn_vis.clone();
         let detour_name = &self.hook_attr.detour_name;
         let chain_name = syn::Ident::new(
             &format!("{}__chain", detour_name),
@@ -418,6 +419,7 @@ impl Detours {
                 fn_sig,
                 self_ty: Some(self_ty.clone()),
                 original_fn_name,
+                fn_vis: item_fn.vis.clone(),
             });
         }
         let sig = renamed_sig.unwrap_or(item_fn.sig);
@@ -428,6 +430,7 @@ impl Detours {
 impl Fold for Detours {
     fn fold_item_fn(&mut self, item_fn: ItemFn) -> ItemFn {
         let mut attrs = Vec::new();
+        let mut renamed_sig: Option<Signature> = None;
 
         for attr in item_fn.attrs {
             if !attr.path().is_ident("hook") {
@@ -437,13 +440,28 @@ impl Fold for Detours {
             let Ok(hook_attrs) = attr.parse_args::<HookAttributeArgs>() else {
                 continue;
             };
+            let original_fn_name = item_fn.sig.ident.clone();
+            let fn_sig = if hook_attrs.chain {
+                let new_ident = syn::Ident::new(
+                    &format!("__{}_detour", original_fn_name),
+                    original_fn_name.span(),
+                );
+                let mut sig = item_fn.sig.clone();
+                sig.ident = new_ident;
+                renamed_sig = Some(sig.clone());
+                sig
+            } else {
+                item_fn.sig.clone()
+            };
             self.detours.push(DetourInfo {
                 hook_attr: hook_attrs,
-                original_fn_name: item_fn.sig.ident.clone(),
-                fn_sig: item_fn.sig.clone(),
+                original_fn_name,
+                fn_sig,
                 self_ty: None,
+                fn_vis: item_fn.vis.clone(),
             })
         }
-        ItemFn { attrs, ..item_fn }
+        let sig = renamed_sig.unwrap_or(item_fn.sig);
+        ItemFn { attrs, sig, ..item_fn }
     }
 }

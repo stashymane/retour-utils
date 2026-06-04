@@ -1,6 +1,7 @@
+#[cfg(target_os = "windows")]
 use retour_utils::hook_module;
 
-
+#[cfg(target_os = "windows")]
 #[hook_module("foo.bar")]
 mod hooks {
     #[hook(NormalHook, symbol = "Foo")]

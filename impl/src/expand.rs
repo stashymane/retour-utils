@@ -33,8 +33,13 @@ pub fn expand_impl(impl_block: ItemImpl, attribute_meta: Option<LitStr>) -> Resu
         new_items.push(ImplItem::Verbatim(chain_const));
     }
 
+    for ptr_const in detours.generate_ptr_accessor_impl_consts() {
+        new_items.push(ImplItem::Verbatim(ptr_const));
+    }
+
     let statics = detours.generate_detour_decls();
     let ptr_accessors = detours.generate_ptr_accessor_decls();
+    let ptr_impl_statics = detours.generate_ptr_accessor_impl_statics();
 
     let rebuilt_impl = ItemImpl {
         items: new_items,
@@ -47,6 +52,9 @@ pub fn expand_impl(impl_block: ItemImpl, attribute_meta: Option<LitStr>) -> Resu
     }
     for p in ptr_accessors {
         p.to_tokens(&mut output);
+    }
+    for s in ptr_impl_statics {
+        proc_macro2::TokenStream::from(s).to_tokens(&mut output);
     }
     rebuilt_impl.to_tokens(&mut output);
 
@@ -63,7 +71,13 @@ pub fn expand(mod_block: ItemMod, attribute_meta: Option<LitStr>) -> Result<Toke
     content.push(detours.get_module_name_decl());
     let decls = detours.generate_detour_decls();
     content.extend(decls);
-    content.extend(detours.generate_ptr_accessor_decls());
+    let ptr_decls = detours.generate_ptr_accessor_decls();
+    let ptr_statics: Vec<_> = detours.generate_ptr_accessor_statics()
+        .into_iter()
+        .map(syn::Item::Verbatim)
+        .collect();
+    content.extend(ptr_decls);
+    content.extend(ptr_statics);
     content.extend(detours.generate_chain_aliases_for_mod());
     content.push(detours.generate_init_detours());
 

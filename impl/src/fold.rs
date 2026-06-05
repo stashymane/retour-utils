@@ -31,10 +31,22 @@ impl Detours {
         self.ptrs.iter().map(|p| p.get_accessor_item()).collect()
     }
 
-    pub fn generate_ptr_inits(&self) -> Vec<Item> {
+    pub fn generate_ptr_accessor_impl_consts(&self) -> Vec<TokenStream> {
+        self.ptrs.iter().map(|p| p.get_accessor_impl_const()).collect()
+    }
+
+    pub fn generate_ptr_accessor_impl_statics(&self) -> Vec<TokenStream> {
+        self.ptrs.iter().map(|p| p.get_accessor_impl_static()).collect()
+    }
+
+    pub fn generate_ptr_accessor_statics(&self) -> Vec<TokenStream> {
+        self.ptrs.iter().map(|p| p.get_accessor_static()).collect()
+    }
+
+    pub fn generate_ptr_inits(&self, use_self: bool) -> Vec<Item> {
         self.ptrs
             .iter()
-            .map(|p| p.generate_ptr_init(self.module_name.as_ref()))
+            .map(|p| p.generate_ptr_init(self.module_name.as_ref(), use_self))
             .collect()
     }
 
@@ -93,7 +105,7 @@ impl Detours {
             .iter()
             .map(|func| func.generate_detour_init_with_prefix(self.module_name.as_ref(), struct_name))
             .collect();
-        let ptr_inits = self.generate_ptr_inits();
+        let ptr_inits = self.generate_ptr_inits(true);
         quote::quote! {
             pub fn init_detours() -> Result<(), #krate_name::Error> {
                 #(#init_funcs;)*
@@ -110,7 +122,7 @@ impl Detours {
             .iter()
             .map(|func| func.generate_detour_init(self.module_name.as_ref()))
             .collect();
-        let ptr_inits = self.generate_ptr_inits();
+        let ptr_inits = self.generate_ptr_inits(false);
         Item::Verbatim(quote::quote! {
             pub fn init_detours() -> Result<(), #krate_name::Error> {
                 #(#init_funcs;)*

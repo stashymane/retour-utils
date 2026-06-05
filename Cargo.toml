@@ -26,6 +26,10 @@ path = "tests/chain_order.rs"
 name = "chain_order_module"
 path = "tests/chain_order_module.rs"
 
+[[test]]
+name = "ptr_rw"
+path = "tests/ptr_rw.rs"
+
 [dev-dependencies]
 trybuild = { version = "1.0", features = ["diff"] }
 

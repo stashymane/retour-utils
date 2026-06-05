@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::ToTokens;
-use syn::{parse::Parse, token::Unsafe, Abi, Ident, LitInt, LitStr, Token, Visibility};
+use syn::{parse::Parse, token::Unsafe, Abi, Ident, LitInt, LitStr, Token, Type, Visibility};
 
 use crate::crate_refs::parent_crate;
 
@@ -9,6 +9,7 @@ pub mod kw {
     syn::custom_keyword!(offset);
     syn::custom_keyword!(symbol);
     syn::custom_keyword!(chain);
+    syn::custom_keyword!(ptr);
 }
 
 pub struct HookAttributeArgs {
@@ -127,4 +128,22 @@ impl ToTokens for HookArg {
             }
         }
     }
+}
+
+pub struct PtrAttributeArgs {
+    pub hook_info: HookArg,
+}
+
+impl Parse for PtrAttributeArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let hook_info = input.parse()?;
+        Ok(Self { hook_info })
+    }
+}
+
+pub struct PtrItem {
+    pub vis: Visibility,
+    pub name: Ident,
+    pub ty: Type,
+    pub attr: PtrAttributeArgs,
 }

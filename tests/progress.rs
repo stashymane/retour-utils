@@ -21,3 +21,10 @@ fn hook_impl_tests() {
     t.pass("tests/build-tests/hook_impl_chain.rs");
     t.pass("tests/build-tests/hook_impl_no_dll.rs");
 }
+
+#[test]
+fn ptr_tests() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/build-tests/ptr_module.rs");
+    t.pass("tests/build-tests/ptr_impl.rs");
+}

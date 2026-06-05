@@ -19,9 +19,10 @@ pub fn expand_impl(impl_block: ItemImpl, attribute_meta: Option<LitStr>) -> Resu
     let mut new_items: Vec<ImplItem> = impl_block
         .items
         .into_iter()
-        .map(|item| match item {
-            ImplItem::Fn(fn_item) => ImplItem::Fn(detours.collect_impl_item_fn(fn_item, &struct_name)),
-            other => other,
+        .filter_map(|item| match item {
+            ImplItem::Fn(fn_item) => Some(ImplItem::Fn(detours.collect_impl_item_fn(fn_item, &struct_name))),
+            ImplItem::Const(const_item) => detours.collect_impl_item_const(const_item).map(ImplItem::Const),
+            other => Some(other),
         })
         .collect();
 
@@ -33,6 +34,7 @@ pub fn expand_impl(impl_block: ItemImpl, attribute_meta: Option<LitStr>) -> Resu
     }
 
     let statics = detours.generate_detour_decls();
+    let ptr_accessors = detours.generate_ptr_accessor_decls();
 
     let rebuilt_impl = ItemImpl {
         items: new_items,
@@ -42,6 +44,9 @@ pub fn expand_impl(impl_block: ItemImpl, attribute_meta: Option<LitStr>) -> Resu
     let mut output = TokenStream::new();
     for s in statics {
         s.to_tokens(&mut output);
+    }
+    for p in ptr_accessors {
+        p.to_tokens(&mut output);
     }
     rebuilt_impl.to_tokens(&mut output);
 
@@ -58,6 +63,7 @@ pub fn expand(mod_block: ItemMod, attribute_meta: Option<LitStr>) -> Result<Toke
     content.push(detours.get_module_name_decl());
     let decls = detours.generate_detour_decls();
     content.extend(decls);
+    content.extend(detours.generate_ptr_accessor_decls());
     content.extend(detours.generate_chain_aliases_for_mod());
     content.push(detours.generate_init_detours());
 

@@ -1,9 +1,5 @@
 mod error;
-
-use std::{ffi::CString, path::Path};
-
-pub use error::Error;
-use minidl::Library;
+mod lookup;
 
 /// Private re-exports used by macro-generated code. Not part of the public API.
 #[doc(hidden)]
@@ -11,7 +7,6 @@ pub mod __private {
     pub use retour::StaticDetour;
     pub use std::sync::Mutex;
 }
-
 /// Macro used to hook multiple `retour::StaticDetour`s at once
 ///
 /// Reads a `mod` block and generating static detours from #[hook] macros.
@@ -65,63 +60,14 @@ pub mod __private {
 pub use retour_utils_impl::hook_impl;
 pub use retour_utils_impl::hook_module;
 
-type Result<T> = std::result::Result<T, error::Error>;
 
-pub enum LookupData {
-    Offset {
-        module: &'static str,
-        offset: usize,
-    },
-    Symbol {
-        module: &'static str,
-        symbol: &'static str,
-    },
-    /// Offset relative to the current executable/process base address.
-    SelfOffset { offset: usize },
-    /// Exported symbol from the current executable/process.
-    SelfSymbol { symbol: &'static str },
-}
+pub use error::Error;
+pub use lookup::*;
 
-impl LookupData {
-    pub const fn from_offset(module: &'static str, offset: usize) -> Self {
-        Self::Offset { module, offset }
-    }
+use minidl::Library;
+use std::path::Path;
 
-    pub const fn from_symbol(module: &'static str, symbol: &'static str) -> Self {
-        Self::Symbol { module, symbol }
-    }
-
-    pub const fn from_self_offset(offset: usize) -> Self {
-        Self::SelfOffset { offset }
-    }
-
-    pub const fn from_self_symbol(symbol: &'static str) -> Self {
-        Self::SelfSymbol { symbol }
-    }
-
-    fn get_module(&self) -> Option<&str> {
-        match self {
-            Self::Offset { module, .. } => Some(module),
-            Self::Symbol { module, .. } => Some(module),
-            Self::SelfOffset { .. } | Self::SelfSymbol { .. } => None,
-        }
-    }
-
-    fn address_from_handle(&self, handle: &Library) -> Option<*const ()> {
-        match self {
-            LookupData::Offset { offset, .. } | LookupData::SelfOffset { offset } => {
-                Some((handle.as_ptr() as usize + offset) as *const ())
-            }
-            LookupData::Symbol { symbol, .. } | LookupData::SelfSymbol { symbol } => {
-                let c_symbol = CString::new(*symbol).ok()?;
-                let symbol_with_null_terminator =
-                    String::from_utf8(c_symbol.into_bytes_with_nul()).ok()?;
-
-                unsafe { handle.sym_opt(&symbol_with_null_terminator) }
-            }
-        }
-    }
-}
+type Result<T> = std::result::Result<T, Error>;
 
 /// Initialize detour by passing the address of original function to `init_detour_fn`
 ///
@@ -148,13 +94,13 @@ fn load_self() -> Result<Library> {
     {
         use std::os::raw::c_int;
         unsafe extern "C" {
-            fn dlopen(filename: *const std::os::raw::c_char, flags: c_int) -> *mut std::ffi::c_void;
+            fn dlopen(filename: *const std::os::raw::c_char, flags: c_int)
+            -> *mut std::ffi::c_void;
         }
         const RTLD_LAZY: c_int = 1;
         let handle = unsafe { dlopen(std::ptr::null(), RTLD_LAZY) };
-        unsafe { Library::from_ptr(handle) }.ok_or_else(|| {
-            Error::IoError(std::io::Error::last_os_error())
-        })
+        unsafe { Library::from_ptr(handle) }
+            .ok_or_else(|| Error::IoError(std::io::Error::last_os_error()))
     }
     #[cfg(windows)]
     {
@@ -162,9 +108,8 @@ fn load_self() -> Result<Library> {
             fn GetModuleHandleW(lpModuleName: *const u16) -> *mut std::ffi::c_void;
         }
         let handle = unsafe { GetModuleHandleW(std::ptr::null()) };
-        unsafe { Library::from_ptr(handle) }.ok_or_else(|| {
-            Error::IoError(std::io::Error::last_os_error())
-        })
+        unsafe { Library::from_ptr(handle) }
+            .ok_or_else(|| Error::IoError(std::io::Error::last_os_error()))
     }
     #[cfg(not(any(unix, windows)))]
     {

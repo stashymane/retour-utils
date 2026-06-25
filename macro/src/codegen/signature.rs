@@ -1,14 +1,12 @@
-use std::borrow::Cow;
+use syn::fold;
+use syn::fold::Fold;
+use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
+use syn::{BareFnArg, FnArg, Ident, Pat, PatIdent, Signature, Token, Type, TypeBareFn, TypePtr};
 
-use syn::{
-    fold::{self, Fold},
-    punctuated::Punctuated,
-    spanned::Spanned,
-    BareFnArg, FnArg, Ident, Pat, PatIdent, Signature, Token, Type, TypeBareFn, TypePtr,
-};
+use crate::attr::HookAttr;
 
-use crate::parse::HookAttributeArgs;
-
+/// Replace every occurrence of `Self` in `ty` with the concrete `self_ty` ident.
 pub fn replace_self_in_type(ty: Type, self_ty: &Ident) -> Type {
     struct SelfReplacer<'a>(&'a Ident);
     impl Fold for SelfReplacer<'_> {
@@ -27,6 +25,7 @@ pub fn replace_self_in_type(ty: Type, self_ty: &Ident) -> Type {
     SelfReplacer(self_ty).fold_type(ty)
 }
 
+/// Convert a `self` / `&self` / `&mut self` receiver into a typed pointer argument.
 pub fn receiver_to_ptr_arg(receiver: &syn::Receiver, self_ty: &Ident) -> FnArg {
     let self_path: Type = Type::Path(syn::TypePath {
         qself: None,
@@ -66,15 +65,9 @@ pub fn receiver_to_ptr_arg(receiver: &syn::Receiver, self_ty: &Ident) -> FnArg {
     })
 }
 
-pub fn fn_type(fn_sig: &Signature, hook_info: &HookAttributeArgs) -> Type {
-    fn_type_impl(fn_sig, hook_info, None)
-}
-
-pub fn fn_type_with_self(fn_sig: &Signature, hook_info: &HookAttributeArgs, self_ty: &Ident) -> Type {
-    fn_type_impl(fn_sig, hook_info, Some(self_ty))
-}
-
-fn fn_type_impl(fn_sig: &Signature, hook_info: &HookAttributeArgs, self_ty: Option<&Ident>) -> Type {
+/// Build the bare `fn(…) -> …` type for a `StaticDetour<…>` declaration.
+/// When `self_ty` is provided, `Self` is replaced and receivers are converted to pointers.
+pub fn bare_fn_type(fn_sig: &Signature, hook_attr: &HookAttr, self_ty: Option<&Ident>) -> Type {
     let mut args = Punctuated::new();
     for arg in &fn_sig.inputs {
         match arg {
@@ -106,9 +99,9 @@ fn fn_type_impl(fn_sig: &Signature, hook_info: &HookAttributeArgs, self_ty: Opti
     }
 
     Type::BareFn(TypeBareFn {
-        lifetimes: None, // TODO: maybe support lifetimes
-        unsafety: hook_info.unsafety,
-        abi: hook_info.abi.clone(),
+        lifetimes: None,
+        unsafety: hook_attr.unsafety,
+        abi: hook_attr.abi.clone(),
         fn_token: fn_sig.fn_token,
         paren_token: fn_sig.paren_token,
         inputs: args,
@@ -120,48 +113,4 @@ fn fn_type_impl(fn_sig: &Signature, hook_info: &HookAttributeArgs, self_ty: Opti
         }),
         output: fn_sig.output.clone(),
     })
-}
-
-pub fn fn_arg_names(fn_sig: &Signature) -> Result<Vec<&Pat>, syn::Error> {
-    let mut args = Vec::new();
-    let mut errs: Option<syn::Error> = None;
-    for arg in &fn_sig.inputs {
-        match arg {
-            FnArg::Typed(arg) => args.push(arg.pat.as_ref()),
-            FnArg::Receiver(_) => {
-                let err = syn::Error::new(
-                    arg.span(),
-                    "`self` is not currently supported by this macro",
-                );
-                match &mut errs {
-                    Some(errs) => errs.combine(err),
-                    None => errs = Some(err),
-                }
-            }
-        }
-    }
-    if let Some(e) = errs {
-        Err(e)
-    } else {
-        Ok(args)
-    }
-}
-
-pub fn fn_arg_names_with_self<'a>(
-    fn_sig: &'a Signature,
-    self_ty: &Ident,
-) -> Vec<Cow<'a, Pat>> {
-    let mut args = Vec::new();
-    for arg in &fn_sig.inputs {
-        match arg {
-            FnArg::Typed(arg) => args.push(Cow::Borrowed(arg.pat.as_ref())),
-            FnArg::Receiver(recv) => {
-                let typed = receiver_to_ptr_arg(recv, self_ty);
-                if let FnArg::Typed(pt) = typed {
-                    args.push(Cow::Owned(*pt.pat));
-                }
-            }
-        }
-    }
-    args
 }

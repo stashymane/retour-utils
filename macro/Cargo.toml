@@ -1,0 +1,22 @@
+[package]
+name = "retour-utils-impl"
+description = "Macro crate for `retour-utils`"
+
+version.workspace = true
+edition.workspace = true
+
+license.workspace = true
+authors.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0.118", features = ["full", "fold"] }
+quote = "1.0.46"
+proc-macro2 = "1.0"
+proc-macro-crate = "3.5.0"

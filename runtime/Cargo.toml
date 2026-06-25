@@ -1,0 +1,43 @@
+[package]
+name = "retour-utils"
+description = "Utility crate for creating hooks with `retour`"
+
+version.workspace = true
+edition.workspace = true
+
+license.workspace = true
+authors.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme.workspace = true
+
+autotests = false
+
+[dependencies]
+retour-utils-impl = { path = "../macro" }
+retour = { version = "0.4.0-alpha.4", features = ["static-detour"] }
+minidl = "0.1.6"
+
+[dev-dependencies]
+trybuild = { version = "1.0.117", features = ["diff"] }
+
+[target."cfg(windows)".dev-dependencies]
+windows = { version = "0.62.2", features = ["Win32_System_LibraryLoader", "Win32_Foundation", "Win32_System_SystemServices", "Win32_UI_WindowsAndMessaging"] }
+
+[[test]]
+name = "tests"
+path = "tests/progress.rs"
+
+[[test]]
+name = "chain_order"
+path = "tests/chain_order.rs"
+
+[[test]]
+name = "chain_order_module"
+path = "tests/chain_order_module.rs"
+
+[[test]]
+name = "ptr_rw"
+path = "tests/ptr_rw.rs"

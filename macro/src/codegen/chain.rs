@@ -30,7 +30,7 @@ pub fn chain_static(detour: &Detour, paths: &CratePaths) -> Item {
             detour: &'static #private_static_detour<#fn_type_sig>,
             wrappers: #private_mutex<
                 ::std::vec::Vec<::std::sync::Arc<
-                    dyn Fn(#(#arg_types,)* &dyn Fn(#(#arg_types),*) #ret_ty) #ret_ty + Send + Sync
+                    dyn Fn(&dyn Fn(#(#arg_types),*) #ret_ty, #(#arg_types),*) #ret_ty + Send + Sync
                 >>
             >,
         }
@@ -47,12 +47,13 @@ pub fn chain_static(detour: &Detour, paths: &CratePaths) -> Item {
                 }
             }
 
-            /// Register a wrapper closure. Each wrapper receives the arguments plus a `next`
-            /// closure that invokes the remaining wrappers and ultimately the original function.
+            /// Register a wrapper closure. Each wrapper receives a `next` closure as the first
+            /// argument that invokes the remaining wrappers and ultimately the original function,
+            /// followed by the hooked function's arguments.
             /// If a wrapper does not call `next`, the inner wrappers and original are skipped.
             #vis fn hook<__F>(&self, f: __F)
             where
-                __F: Fn(#(#arg_types,)* &dyn Fn(#(#arg_types),*) #ret_ty) #ret_ty + Send + Sync + 'static,
+                __F: Fn(&dyn Fn(#(#arg_types),*) #ret_ty, #(#arg_types),*) #ret_ty + Send + Sync + 'static,
             {
                 self.wrappers.lock().unwrap().push(::std::sync::Arc::new(f));
             }
@@ -61,18 +62,18 @@ pub fn chain_static(detour: &Detour, paths: &CratePaths) -> Item {
             /// wrapper; the last `next` calls the original detoured function.
             #vis fn call(&self, #(#typed_args),*) #ret_ty {
                 let snapshot: ::std::vec::Vec<::std::sync::Arc<
-                    dyn Fn(#(#arg_types,)* &dyn Fn(#(#arg_types),*) #ret_ty) #ret_ty + Send + Sync
+                    dyn Fn(&dyn Fn(#(#arg_types),*) #ret_ty, #(#arg_types),*) #ret_ty + Send + Sync
                 >> = self.wrappers.lock().unwrap().iter().rev().cloned().collect();
                 let detour = self.detour;
 
                 fn call_chain(
-                    wrappers: &[::std::sync::Arc<dyn Fn(#(#arg_types,)* &dyn Fn(#(#arg_types),*) #ret_ty) #ret_ty + Send + Sync>],
+                    wrappers: &[::std::sync::Arc<dyn Fn(&dyn Fn(#(#arg_types),*) #ret_ty, #(#arg_types),*) #ret_ty + Send + Sync>],
                     detour: &'static #private_static_detour<#fn_type_sig>,
                     #(#typed_args),*
                 ) #ret_ty {
                     if let Some((first, rest)) = wrappers.split_first() {
                         let rest = rest.to_vec();
-                        first(#(#arg_names,)* &move |#(#arg_names),*| call_chain(&rest, detour, #(#arg_names),*))
+                        first(&move |#(#arg_names),*| call_chain(&rest, detour, #(#arg_names),*), #(#arg_names),*)
                     } else {
                         #maybe_unsafe { (detour.__detour())(#(#arg_names),*) }
                     }

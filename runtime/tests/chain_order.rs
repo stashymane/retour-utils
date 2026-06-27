@@ -24,11 +24,11 @@ fn chain_hooks_run_in_order() {
     let first = "first";
     let second = "second";
 
-    Hooks::original_fn.hook(|value, next| {
+    Hooks::original_fn.hook(|next, value| {
         ORDER.lock().unwrap().push(first);
         next(value)
     });
-    Hooks::original_fn.hook(|value, next| {
+    Hooks::original_fn.hook(|next, value| {
         ORDER.lock().unwrap().push(second);
         next(value)
     });

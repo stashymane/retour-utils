@@ -22,11 +22,11 @@ fn chain_hooks_run_in_order_module() {
     let first = "first";
     let second = "second";
 
-    hooks::original_fn.hook(|value, next| {
+    hooks::original_fn.hook(|next, value| {
         ORDER.lock().unwrap().push(first);
         next(value)
     });
-    hooks::original_fn.hook(|value, next| {
+    hooks::original_fn.hook(|next, value| {
         ORDER.lock().unwrap().push(second);
         next(value)
     });
